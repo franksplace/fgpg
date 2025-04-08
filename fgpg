@@ -376,7 +376,7 @@ function scrub {
 
 function list-keys {
   if [ -z "$1" ]; then
-    if ! out=$(gpg --list-secret-keys 2>&1); then
+    if ! out=$(gpg --list-secret-keys --with-subkey-fingerprints 2>&1); then
       mlog ERROR "Failed to fetch keys from GnuGPG"
       [[ -n "$out" ]] && mlog ERROR "$out"
     fi
@@ -391,7 +391,7 @@ function list-keys {
         return 41
       fi
 
-      if ! out=$(ssh "$_HOST" 'PATH=/usr/local/bin:$PATH gpg --list-secret-keys'); then
+      if ! out=$(ssh "$_HOST" 'PATH=/usr/local/bin:$PATH gpg --list-secret-keys --with-subkey-fingerprints'); then
         mlog ERROR "Failed to fetch GnuGPG keys from $_HOST"
       else
         if [ -n "$out" ]; then
