@@ -1,5 +1,6 @@
 # fgpg
-Script to help manage GnuGPG keys across systems
+
+Bash script to help manage GnuGPG keys across systems
 
 ## Usage
 
