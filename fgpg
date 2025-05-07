@@ -54,6 +54,7 @@ declare DATELOG=false # Don't display ISO8601 in output
 # shellcheck disable=SC2034
 declare KEYFOMAT="SHORT"
 declare TEST=false
+declare REMOTE_HOST_PATH='PATH=/usr/local/bin:/opt/homebrew/bin:$PATH'
 
 #####################################
 # Function Section
@@ -181,14 +182,14 @@ function sync-backup {
     mlog ERROR "$_TRUST_FILE trust file not found or not readable"
     return 23
   fi
-  mlog VERBOSE "Validation of $_TRUST_FILE successfull"
+  mlog VERBOSE "Validation of $_TRUST_FILE successful"
 
   mlog VERBOSE "Validating connectivity to $_HOST"
   if ! [[ "$(ssh-keyscan -4T 2 "$_HOST" 2>&1)" =~ $_HOST ]]; then
     mlog ERROR "Validation of connectivity to $_HOST failed"
     return 24
   fi
-  mlog VERBOSE "Validation of connectivity to $_HOST successfull"
+  mlog VERBOSE "Validation of connectivity to $_HOST successful"
 
   mlog VERBOSE "Determining UID from $_KEY_FILE for use in validation later"
   if ! out=$(gpg --show-keys --with-subkey-fingerprint --with-colons "$_KEY_FILE" | awk -F: '$1=="uid" {printf $10; exit;}'); then
@@ -199,28 +200,28 @@ function sync-backup {
   mlog VERBOSE "Determined $_UID uid is found in $_KEY_FILE"
 
   mlog VERBOSE "Validating $_HOST has gpg installed"
-  if ! out=$(ssh "$_HOST" 'PATH=/usr/local/bin:$PATH gpg -k >/dev/null 2>&1 ; PATH=/usr/local/bin:$PATH gpg --version > /dev/null 2>&1 ; echo -n $?') || [ "$out" -ne 0 ]; then
+  if ! out=$(ssh "$_HOST" $REMOTE_HOST_PATH ' gpg --version > /dev/null 2>&1 ; echo -n $?') || [ "$out" -ne 0 ]; then
     mlog ERROR "Unable to ssh to $_HOST or gpg --version is nost installed"
     return 26
   fi
   mlog VERBOSE "Validation successfull as $_HOST has gpg installed "
 
   mlog VERBOSE "Importing $_KEY_FILE into gpg store on $_HOST"
-  if ! out="$(ssh "$_HOST" 'PATH=/usr/local/bin:$PATH gpg --import-options restore --import --batch' 2>&1 <"$_KEY_FILE")"; then
+  if ! out="$(ssh "$_HOST" $REMOTE_HOST_PATH ' gpg --import-options restore --import --batch' 2>&1 <"$_KEY_FILE")"; then
     mlog ERROR "Unable to import $_KEY_FILE on $_HOST"
     return 27
   fi
   [[ -n "$out" ]] && mlog VERBOSE "=-=-= Import Key Output =-=-=\n$out"
 
   mlog VERBOSE "Importing $_TRUST_FILE into gpg ownertrust store on $_HOST"
-  if ! out="$(ssh "$_HOST" 'PATH=/usr/local/bin:$PATH gpg --import-ownertrust --batch' 2>&1 <"$_TRUST_FILE")"; then
+  if ! out="$(ssh "$_HOST" $REMOTE_HOST_PATH ' gpg --import-ownertrust --batch' 2>&1 <"$_TRUST_FILE")"; then
     mlog ERROR "Unable to import $_TRUST_FILE on $_HOST"
     return 28
   fi
   [[ -n "$out" ]] && mlog VERBOSE "=-=-= Import Ownertrust Output =-=-=\n$out"
 
   mlog VERBOSE "Validating $_UID is found in gpg store on $_HOST"
-  if ! out="$(ssh "$_HOST" 'PATH=/usr/local/bin:$PATH gpg -K --with-subkey-fingerprint "'$_UID'"')"; then
+  if ! out="$(ssh "$_HOST" $REMOTE_HOST_PATH 'gpg -K --with-subkey-fingerprint "'$_UID'"')"; then
     mlog ERROR "Unable to find $_UID in gpg db stores on _$HOST"
     return 29
   fi
@@ -315,7 +316,7 @@ function scrub {
     mlog VERBOSE "Validation of connectivity to $_HOST successfull"
 
     mlog VERBOSE "Determining key fingerprint for $_KEY on $_HOST"
-    if ! out="$(ssh $_HOST 'PATH=/usr/local/bin:$PATH gpg --with-colons -K --with-fingerprint --with-fingerprint "'$_KEY'"' 2>&1)"; then
+    if ! out="$(ssh $_HOST $REMOTE_HOST_PATH ' gpg --with-colons -K --with-fingerprint --with-fingerprint "'$_KEY'"' 2>&1)"; then
       mlog ERROR "Unable to determine a fingerprint for $_KEY on $_HOST"
       return 42
     fi
@@ -325,10 +326,10 @@ function scrub {
 
     # shellcheck disable=SC2086
     if $TEST; then
-      mlog TEST "Would of ran: ssh $_HOST 'PATH=/usr/local/bin:\$PATH gpg --batch --yes --delete--secret-keys \"'$_FPR'\"'"
+      mlog TEST "Would of ran: ssh $_HOST $REMOTE_HOST_PATH ' gpg --batch --yes --delete--secret-keys \"'$_FPR'\"'"
     else
       mlog VERBOSE "Deleting secret key with $_FPR fingerprint on $_HOST"
-      if ! out=$(ssh $_HOST 'PATH=/usr/local/bin:$PATH gpg --batch --yes --delete-secret-keys "'$_FPR'"' 2>&1); then
+      if ! out=$(ssh $_HOST $REMOTE_HOST_PATH ' gpg --batch --yes --delete-secret-keys "'$_FPR'"' 2>&1); then
         mlog ERROR "Failed to delete the $_KEY using $_FPR fingerprint on $_HOST"
         [[ -n "$out" ]] && mlog ERROR "$out"
       fi
@@ -337,7 +338,7 @@ function scrub {
 
     # shellcheck disable=SC2086
     if $TEST; then
-      mlog TEST "Would of ran: ssh $_HOST 'PATH=/usr/local/bin:\$PATH gpg --batch --yes --delete-keys \"'$_FPR'\"'"
+      mlog TEST "Would of ran: ssh $_HOST $REMOTE_HOST_PATH ' gpg --batch --yes --delete-keys \"'$_FPR'\"'"
     else
       mlog VERBOSE "Deleting public key with $_FPR fingerprint on $_HOST"
       if ! out=$(ssh $_HOST 'PATH=/usr/local/bin:$PATH gpg --batch --yes --delete-keys "'$_FPR'"' 2>&1); then
@@ -391,7 +392,7 @@ function list-keys {
         return 41
       fi
 
-      if ! out=$(ssh "$_HOST" 'PATH=/usr/local/bin:$PATH gpg --list-secret-keys --with-subkey-fingerprints'); then
+      if ! out=$(ssh "$_HOST" $REMOTE_HOST_PATH ' gpg --list-secret-keys --with-subkey-fingerprints'); then
         mlog ERROR "Failed to fetch GnuGPG keys from $_HOST"
       else
         if [ -n "$out" ]; then
@@ -423,7 +424,7 @@ function remote-version {
       return 41
     fi
 
-    if ! out=$(ssh "$_HOST" 'for x in $(PATH=/usr/local/bin:$PATH type -a gpg | cut -d" " -f3) ; do echo -n '"$_HOST"':$x: ; $x --version | head -1 ; done'); then
+    if ! out=$(ssh "$_HOST" 'for x in $('$REMOTE_HOST_PATH' type -a gpg | cut -d" " -f3) ; do echo -n '"$_HOST"':$x: ; $x --version | head -1 ; done'); then
       mlog ERROR "Unable to determine GPG version from $_HOST"
     else
       if [ -n "$out" ]; then
