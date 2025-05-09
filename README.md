@@ -17,7 +17,7 @@ Commands:
   update-default-key <key>                      : Update default key in gpg.conf
   cleanup                                       : Cleanup gpg (remove expired keys)
   sync-backup <key file> <otrust file> <host>   : Utilizing backup files to import to remote key store"
-  sync <key> <otrust> <host>                    : On the fly sync of key to host
+  sync <key> <otrust> <host>                    : On the fly sync of key to host (NOT DONE)
   backup <key>                                  : Backup key and store info in <out>
   import <key file>                             : Import <key>
   import-otrust <otrust file>                   : Import ownership trust"
