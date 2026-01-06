@@ -2,7 +2,7 @@
 # shellcheck disable=SC2068
 
 #
-#Copyright 2024-2025 Frank Stutz.
+#Copyright 2024-2026 Frank Stutz.
 #
 #Licensed under the Apache License, Version 2.0 (the "License");
 #you may not use this file except in compliance with the License.
@@ -52,7 +52,7 @@ fi
 # shellcheck disable=SC2034
 declare DATELOG=false # Don't display ISO8601 in output
 # shellcheck disable=SC2034
-declare KEYFOMAT="SHORT"
+declare KEYFORMAT="SHORT"
 declare TEST=false
 declare REMOTE_HOST_PATH='PATH=/usr/local/bin:/opt/homebrew/bin:$PATH'
 
@@ -84,8 +84,6 @@ function update-default-key {
     AWK_CMD='$1=="pub" && $2=="u" { printf "%s ", $5}'
   fi
 
-  #  if ! keyids=("$(echo "${raw_keyids[*]}" 2>/dev/null | awk -F: '$1=="pub" && $2=="u" { printf "%s ", $5}' 2>/dev/null)"); then
-  #
   if ! keyids=("$(echo "${raw_keyids[*]}" 2>/dev/null | awk -F: "$AWK_CMD" 2>/dev/null)"); then
     mlog ERROR "Unable to determine public valid keyid for $key"
     return 12
@@ -136,7 +134,7 @@ function cleanup {
     if bcheck QUIET; then
       # shellcheck disable=SC2207,SC2048,SC2086
       if ! out=($(gpg --batch --yes --delete-keys ${exp_keys[*]} 2>&1)); then
-        mlog ERROR "Unable to deleted exipred keys ${exp_keys[*]}"
+        mlog ERROR "Unable to delete expired keys ${exp_keys[*]}"
         [[ ${#out[@]} -ge 1 && -n "${out[*]}" ]] && mlog ERROR "${out[*]}"
         return 6
       fi
@@ -201,10 +199,10 @@ function sync-backup {
 
   mlog VERBOSE "Validating $_HOST has gpg installed"
   if ! out=$(ssh "$_HOST" $REMOTE_HOST_PATH ' gpg --version > /dev/null 2>&1 ; echo -n $?') || [ "$out" -ne 0 ]; then
-    mlog ERROR "Unable to ssh to $_HOST or gpg --version is nost installed"
+    mlog ERROR "Unable to ssh to $_HOST or gpg --version is not installed"
     return 26
   fi
-  mlog VERBOSE "Validation successfull as $_HOST has gpg installed "
+  mlog VERBOSE "Validation successful as $_HOST has gpg installed "
 
   mlog VERBOSE "Importing $_KEY_FILE into gpg store on $_HOST"
   if ! out="$(ssh "$_HOST" $REMOTE_HOST_PATH ' gpg --import-options restore --import --batch' 2>&1 <"$_KEY_FILE")"; then
@@ -222,7 +220,7 @@ function sync-backup {
 
   mlog VERBOSE "Validating $_UID is found in gpg store on $_HOST"
   if ! out="$(ssh "$_HOST" $REMOTE_HOST_PATH 'gpg -K --with-subkey-fingerprint "'$_UID'"')"; then
-    mlog ERROR "Unable to find $_UID in gpg db stores on _$HOST"
+    mlog ERROR "Unable to find $_UID in gpg db stores on $_HOST"
     return 29
   fi
 
@@ -231,8 +229,8 @@ function sync-backup {
 }
 
 function sync {
-  echo "NOT DONE"
-
+  mlog ERROR "sync command is not implemented. Please use 'backup' followed by 'sync-backup' instead."
+  return 50
 }
 
 function backup {
@@ -243,9 +241,15 @@ function backup {
   keyid=$1
   shift
 
-  declare keyid_reg="^[A-Za-z\@\.]+$"
+  declare keyid_reg="^[A-Za-z0-9\@\.\-\+]+$"
   if ! [[ "$keyid" =~ $keyid_reg ]]; then
     mlog ERROR "Invalid key ($keyid)"
+    return 10
+  fi
+
+  mlog VERBOSE "Checking if key $keyid exists in local keyring"
+  if ! out=$(gpg --list-secret-keys --with-colons "$keyid" 2>&1); then
+    mlog ERROR "Unable to find secret key $keyid in local keyring"
     return 10
   fi
 
@@ -262,9 +266,8 @@ function backup {
   mlog SUCCESS "Successfully created $keyid key material backup ($key)."
 
   mlog VERBOSE "Exporting Trust Store"
-  if ! out="$(gpg --export-ownertrust >"${otrust}")"; then
-    mlog ERROR "Unable to create owership trust backup for $keyid"
-    [[ -n "$out" ]] && mlog ERROR "$out"
+  if ! gpg --export-ownertrust >"${otrust}"; then
+    mlog ERROR "Unable to create ownership trust backup for $keyid"
     return 12
   fi
   mlog SUCCESS "Successfully created trust store backup ($otrust)."
@@ -300,7 +303,7 @@ function import-otrust {
 
 function scrub {
   if [ -z "$1" ]; then
-    mlog ERROR "scrub requries at least a <key> with optiona of remote host"
+    mlog ERROR "scrub requires at least a <key> with optional remote host"
     return 40
   fi
   declare _KEY=$1
@@ -326,22 +329,22 @@ function scrub {
 
     # shellcheck disable=SC2086
     if $TEST; then
-      mlog TEST "Would of ran: ssh $_HOST $REMOTE_HOST_PATH ' gpg --batch --yes --delete--secret-keys \"'$_FPR'\"'"
+      mlog TEST "Would run: ssh $_HOST $REMOTE_HOST_PATH ' gpg --batch --yes --delete-secret-keys \"'$_FPR'\"'"
     else
       mlog VERBOSE "Deleting secret key with $_FPR fingerprint on $_HOST"
       if ! out=$(ssh $_HOST $REMOTE_HOST_PATH ' gpg --batch --yes --delete-secret-keys "'$_FPR'"' 2>&1); then
         mlog ERROR "Failed to delete the $_KEY using $_FPR fingerprint on $_HOST"
         [[ -n "$out" ]] && mlog ERROR "$out"
       fi
-      mlog SUCCESS "Successfully deleted secrey key $_KEY with fingerprint of $_FPR on $_HOST"
+      mlog SUCCESS "Successfully deleted secret key $_KEY with fingerprint of $_FPR on $_HOST"
     fi
 
     # shellcheck disable=SC2086
     if $TEST; then
-      mlog TEST "Would of ran: ssh $_HOST $REMOTE_HOST_PATH ' gpg --batch --yes --delete-keys \"'$_FPR'\"'"
+      mlog TEST "Would run: ssh $_HOST $REMOTE_HOST_PATH ' gpg --batch --yes --delete-keys \"'$_FPR'\"'"
     else
       mlog VERBOSE "Deleting public key with $_FPR fingerprint on $_HOST"
-      if ! out=$(ssh $_HOST 'PATH=/usr/local/bin:$PATH gpg --batch --yes --delete-keys "'$_FPR'"' 2>&1); then
+      if ! out=$(ssh $_HOST $REMOTE_HOST_PATH ' gpg --batch --yes --delete-keys "'$_FPR'"' 2>&1); then
         mlog ERROR "Failed to delete the $_KEY using $_FPR fingerprint on $_HOST"
         [[ -n "$out" ]] && mlog ERROR "$out"
       fi
@@ -367,7 +370,7 @@ function scrub {
 
     mlog VERBOSE "Deleting public key with $_FPR fingerprint"
     # shellcheck disable=SC2086
-    if ! out=$(gpg --batch --yes --delete-secret-keys $_FPR 2>&1); then
+    if ! out=$(gpg --batch --yes --delete-keys $_FPR 2>&1); then
       mlog ERROR "Failed to delete the $_KEY using $_FPR fingerprint"
       [[ -n "$out" ]] && mlog ERROR "$out"
     fi
@@ -380,6 +383,7 @@ function list-keys {
     if ! out=$(gpg --list-secret-keys --with-subkey-fingerprints 2>&1); then
       mlog ERROR "Failed to fetch keys from GnuGPG"
       [[ -n "$out" ]] && mlog ERROR "$out"
+      return 1
     fi
     mlog "$out"
   else
@@ -445,19 +449,20 @@ Options:
   -v,--verbose    : Enable verbose logging
   -s,--short      : Utilize short keyid format
   -l,--long       : Utilize long keyid format
+  -t,--test       : Enable test mode (dry-run for scrub command)
 
 Commands:
   list (host)                                   : List keys on host (if host not given localhost used)
   update-default-key <key>                      : Update default key in gpg.conf
   cleanup                                       : Cleanup gpg (remove expired keys)
-  sync-backup <key file> <otrust file> <host>   : Utilizing backup files to import to remote key store"
-  sync <key> <otrust> <host>                    : On the fly sync of key to host
+  sync-backup <key file> <otrust file> <host>   : Utilizing backup files to import to remote key store
+  sync <key> <otrust> <host>                    : On the fly sync of key to host (not implemented)
   backup <key>                                  : Backup key and store info in <out>
   import <key file>                             : Import <key>
-  import-otrust <otrust file>                   : Import ownership trust"
-  scrub <key> (host)                            : Scrub <key> from local store or from (host)"
-  remote-version <host> ..                      : Determine remote gpg version (ideally 2.4.x for Auth keys)"
-'
+  import-otrust <otrust file>                   : Import ownership trust
+  scrub <key> (host)                            : Scrub <key> from local store or from (host)
+  remote-version <host> ..                      : Determine remote gpg version (ideally 2.4.x for Auth keys)
+ '
 
   if [ -n "$1" ] && [[ "$1" =~ ^[0-9]+ ]] && [ "$1" -ge 0 ] && [ "$1" -le 255 ]; then
     exit "$1"
@@ -469,7 +474,8 @@ Commands:
 #####################################
 
 if ! nullify gpg --version; then
-  mlog ERROR "gpg is not install or not in search path" 1
+  mlog ERROR "gpg is not installed or not in search path"
+  exit 1
 fi
 
 if [[ $# -lt 1 ]]; then
@@ -486,21 +492,21 @@ while [[ $# -gt 0 ]]; do
   shift
   case "${_EOPT}${_ARG}" in
   --)
-    ARGV+=("$_ARG")
+    _ARGV+=("$_ARG")
     _EOPT=1
     ;;
-  --*=*) ARGV+=("${_ARG%%=*}" "${_ARG#*=}") ;;
-  --*) ARGV+=("$_ARG") ;;
+  --*=*) _ARGV+=("${_ARG%%=*}" "${_ARG#*=}") ;;
+  --*) _ARGV+=("$_ARG") ;;
   -*)
-    for x in $(seq 2 ${#_ARG}); do ARGV+=("-${_ARG:$x-1:1}"); done
+    for x in $(seq 2 ${#_ARG}); do _ARGV+=("-${_ARG:$x-1:1}"); done
     unset x
     ;;
-  *) ARGV+=("$_ARG") ;;
+  *) _ARGV+=("$_ARG") ;;
   esac
 done
 
 _EOPT=''
-set -- "${ARGV[@]}"
+set -- "${_ARGV[@]}"
 while [[ $# -gt 0 ]]; do
   _ARG="$1"
   shift
